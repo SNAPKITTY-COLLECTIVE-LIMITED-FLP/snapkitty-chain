@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STELLA — Sovereign Workflow Orchestration</title>
+<style>
+  :root {
+    --bg:       #030608;
+    --surface:  #080d12;
+    --border:   #0d1a24;
+    --teal:     #00c9a7;
+    --teal-dim: #006b59;
+    --cyan:     #22d3ee;
+    --text:     #cbd5e1;
+    --text-dim: #334155;
+    --gold:     #c9a84c;
+    --seal:     #6d28d9;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --amber:    #f59e0b;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .stella-logo {
+    width: 44px; height: 44px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #006b59, #00c9a7, #22d3ee);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 900; color: #000; letter-spacing: -1px;
+    flex-shrink: 0;
+  }
+
+  .header-title h1 {
+    font-size: 16px; font-weight: 700; color: var(--teal);
+    letter-spacing: 4px; text-transform: uppercase;
+  }
+  .header-title p {
+    font-size: 9px; color: var(--text-dim); letter-spacing: 1px; margin-top: 2px;
+  }
+
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  .chain-badge {
+    font-size: 10px; color: var(--teal-dim); letter-spacing: 1px;
+    border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px;
+  }
+
+  #health-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim);
+  }
+  #health-dot.online  { background: var(--green); animation: pulse 2s ease-in-out infinite; }
+  #health-dot.offline { background: var(--red); }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── Input bar ── */
+  #input-section {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .input-label {
+    font-size: 9px; color: var(--teal-dim); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+
+  #input-row { display: flex; gap: 10px; align-items: flex-end; }
+
+  #action-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+    height: 44px;
+  }
+  #action-input:focus { border-color: var(--teal-dim); }
+  #action-input::placeholder { color: var(--text-dim); }
+
+  #exec-btn {
+    background: linear-gradient(135deg, var(--teal-dim), var(--teal));
+    border: none; border-radius: 6px; color: #000;
+    font-family: inherit; font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; padding: 0 20px; height: 44px;
+    cursor: pointer; white-space: nowrap;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  #exec-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+  #exec-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* ── Main content ── */
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  /* ── Panel ── */
+  .panel {
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 9px; letter-spacing: 2px; color: var(--text-dim);
+    text-transform: uppercase; flex-shrink: 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .panel-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  .panel-body::-webkit-scrollbar { width: 3px; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Stage events ── */
+  .stage-event {
+    border-radius: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.6;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+
+  .stage-event.ok    { border-left: 2px solid var(--green); }
+  .stage-event.fail  { border-left: 2px solid var(--red); }
+
+  .stage-name {
+    font-size: 9px; letter-spacing: 2px; font-weight: 700;
+    text-transform: uppercase; margin-bottom: 4px;
+  }
+  .stage-name.ok   { color: var(--green); }
+  .stage-name.fail { color: var(--red); }
+
+  .stage-msg  { color: var(--text); }
+  .stage-hash { font-size: 9px; color: var(--text-dim); margin-top: 4px; word-break: break-all; }
+
+  .stage-agent {
+    display: inline-block; font-size: 9px; color: var(--teal); margin-top: 3px;
+  }
+
+  /* ── Thinking indicator ── */
+  #thinking {
+    display: none;
+    align-items: center; gap: 6px;
+    padding: 10px 12px;
+    font-size: 11px; color: var(--teal-dim);
+  }
+  #thinking.active { display: flex; }
+  .dot { width:5px;height:5px;border-radius:50%;background:var(--teal-dim);
+    animation:bounce 1.2s ease-in-out infinite; }
+  .dot:nth-child(2){animation-delay:.2s}
+  .dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+
+  /* ── Certificate panel ── */
+  .cert-empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--text-dim); letter-spacing: 1px;
+  }
+
+  .cert-card {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; font-size: 11px; line-height: 1.7;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .cert-card + .cert-card { margin-top: 8px; }
+
+  .cert-section {
+    font-size: 9px; letter-spacing: 2px; color: var(--teal-dim);
+    text-transform: uppercase; margin-bottom: 6px; margin-top: 10px;
+  }
+  .cert-section:first-child { margin-top: 0; }
+
+  .cert-row { display: flex; gap: 8px; margin-bottom: 3px; }
+  .cert-key { color: var(--text-dim); min-width: 100px; flex-shrink: 0; }
+  .cert-val { color: var(--text); word-break: break-all; }
+
+  .verdict-evidence { color: var(--green); font-weight: 700; }
+  .verdict-silence  { color: var(--red);   font-weight: 700; }
+
+  .snapaddr-chip {
+    background: #0d1a24; border: 1px solid var(--teal-dim);
+    border-radius: 4px; padding: 6px 10px; font-size: 9px;
+    color: var(--teal); letter-spacing: 1px; word-break: break-all;
+    margin: 6px 0;
+  }
+
+  .seal-chip {
+    font-size: 9px; color: var(--seal); letter-spacing: 1px;
+    margin-top: 6px;
+  }
+  .seal-chip::before { content: "⛓ "; }
+
+  .stellar-chip {
+    background: #00131a; border: 1px solid #0e7490;
+    border-radius: 4px; padding: 6px 10px; font-size: 9px;
+    color: var(--cyan); letter-spacing: 1px; word-break: break-all;
+    margin: 6px 0;
+  }
+
+  /* ── Footer watermark ── */
+  footer {
+    text-align: center; font-size: 9px; color: var(--text-dim);
+    letter-spacing: 2px; padding: 6px 0;
+    background: var(--surface); border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="stella-logo">S</div>
+  <div class="header-title">
+    <h1>STELLA</h1>
+    <p>SOVEREIGN FINGERPRINT · NOIR ZK · ERRANT CONTRACT · SOROBAN TARGET</p>
+  </div>
+  <div class="header-right">
+    <span class="chain-badge" id="chain-badge">CHAIN :8545</span>
+    <div id="health-dot"></div>
+  </div>
+</header>
+
+<div id="input-section">
+  <div class="input-label">Workflow Action</div>
+  <div id="input-row">
+    <input id="action-input" type="text"
+      placeholder="describe the sovereign action to execute…"
+      value="verify agent identity and seal capability grant"
+      autocomplete="off" spellcheck="false">
+    <button id="exec-btn">▶ EXECUTE WORKFLOW</button>
+  </div>
+</div>
+
+<main>
+  <!-- Left: Pipeline stages -->
+  <div class="panel">
+    <div class="panel-header">
+      ☉ BOB PIPELINE — magmad :3000
+    </div>
+    <div class="panel-body" id="stages-panel">
+      <div id="thinking">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <span>STELLA routing through BOB pipeline…</span>
+      </div>
+      <div class="cert-empty" id="stages-empty">
+        Submit a workflow to begin pipeline execution.
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Certificate -->
+  <div class="panel">
+    <div class="panel-header">
+      ⛓ SETTLEMENT CERTIFICATE · WORM SEALED
+    </div>
+    <div class="panel-body" id="cert-panel">
+      <div class="cert-empty" id="cert-empty">
+        Certificate will appear after pipeline completes.
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>☉⌹○◇△⬡ Ω · STELLA · SNAPKITTY COLLECTIVE · EVIDENCE OR SILENCE</footer>
+
+<script>
+const CHAIN_URL  = 'http://127.0.0.1:8545';
+const MAGMAD_URL = 'http://127.0.0.1:3000';
+
+const btn         = document.getElementById('exec-btn');
+const actionInput = document.getElementById('action-input');
+const stagesPanel = document.getElementById('stages-panel');
+const certPanel   = document.getElementById('cert-panel');
+const thinking    = document.getElementById('thinking');
+const healthDot   = document.getElementById('health-dot');
+const chainBadge  = document.getElementById('chain-badge');
+
+// ── Health check ─────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${CHAIN_URL}/health`, { signal: AbortSignal.timeout(2000) });
+    const d = await r.json();
+    healthDot.className = 'online';
+    chainBadge.textContent = `CHAIN h=${d.height}`;
+  } catch {
+    healthDot.className = 'offline';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 10000);
+
+// ── Execute ──────────────────────────────────────────────────────────────────
+btn.addEventListener('click', execute);
+actionInput.addEventListener('keydown', e => { if (e.key === 'Enter') execute(); });
+
+async function execute() {
+  const action = actionInput.value.trim();
+  if (!action || btn.disabled) return;
+
+  btn.disabled = true;
+
+  // Clear panels
+  stagesPanel.innerHTML = '';
+  certPanel.innerHTML   = '';
+  stagesPanel.appendChild(thinking);
+  thinking.className = 'active';
+
+  const sessionId = `stella_${Date.now()}`;
+  const stages = [];
+
+  try {
+    // ── Stream SSE from magmad ──────────────────────────────────────────────
+    const resp = await fetch(`${MAGMAD_URL}/api/v1/orchestrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, session_id: sessionId }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          stages.push(ev);
+          renderStage(ev);
+        } catch {}
+      }
+    }
+
+    thinking.className = '';
+
+    if (!stages.length) throw new Error('No stages received from magmad — is it running on :3000?');
+
+    // ── Anchor to chain ─────────────────────────────────────────────────────
+    const anchorResp = await fetch(`${CHAIN_URL}/stella/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, session_id: sessionId }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const result = await anchorResp.json();
+
+    if (result.error) throw new Error(result.error);
+
+    renderCertificate(result.witness, result.certificate);
+    checkHealth();
+
+  } catch (err) {
+    thinking.className = '';
+    renderError(err.message);
+  }
+
+  btn.disabled = false;
+  actionInput.focus();
+}
+
+// ── Render stage event ───────────────────────────────────────────────────────
+function renderStage(ev) {
+  const el  = document.createElement('div');
+  const ok  = ev.ok !== false;
+  el.className = `stage-event ${ok ? 'ok' : 'fail'}`;
+
+  el.innerHTML = `
+    <div class="stage-name ${ok ? 'ok' : 'fail'}">${ev.stage}</div>
+    <div class="stage-msg">${escHtml(ev.message || '')}</div>
+    ${ev.agent ? `<div class="stage-agent">→ ${escHtml(ev.agent)}</div>` : ''}
+    ${ev.worm_hash ? `<div class="stage-hash">⛓ ${ev.worm_hash}</div>` : ''}
+    ${ev.error ? `<div class="stage-hash" style="color:var(--red)">${escHtml(ev.error)}</div>` : ''}
+  `;
+  stagesPanel.appendChild(el);
+  stagesPanel.scrollTop = stagesPanel.scrollHeight;
+}
+
+// ── Render certificate ───────────────────────────────────────────────────────
+function renderCertificate(witness, cert) {
+  certPanel.innerHTML = '';
+
+  const verdictClass = witness.verdict === 'EVIDENCE' ? 'verdict-evidence' : 'verdict-silence';
+
+  const card = document.createElement('div');
+  card.className = 'cert-card';
+  card.innerHTML = `
+    <div class="cert-section">Unified Witness</div>
+    <div class="cert-row"><span class="cert-key">id</span><span class="cert-val">${witness.id}</span></div>
+    <div class="cert-row"><span class="cert-key">action</span><span class="cert-val">${escHtml(witness.action)}</span></div>
+    <div class="cert-row"><span class="cert-key">verdict</span><span class="cert-val ${verdictClass}">${witness.verdict}</span></div>
+    <div class="cert-row"><span class="cert-key">agent</span><span class="cert-val">${escHtml(witness.agent || '—')}</span></div>
+    <div class="cert-row"><span class="cert-key">sealed</span><span class="cert-val">${witness.sealed_at}</span></div>
+
+    <div class="cert-section">Canonical Address</div>
+    <div class="snapaddr-chip">${witness.snapaddr}</div>
+
+    <div class="cert-section">Chain Anchor · SnapKitty Chain</div>
+    <div class="cert-row"><span class="cert-key">height</span><span class="cert-val">${cert.chain_anchor.height}</span></div>
+    <div class="cert-row"><span class="cert-key">block</span><span class="cert-val">${cert.chain_anchor.block_hash?.slice(0,32)}…</span></div>
+    <div class="cert-row"><span class="cert-key">worm idx</span><span class="cert-val">${cert.chain_anchor.worm_index}</span></div>
+    <div class="seal-chip">${cert.chain_anchor.worm_seal}</div>
+
+    <div class="cert-section">Zero-Knowledge Proof · Noir</div>
+    <div class="cert-row"><span class="cert-key">protocol</span><span class="cert-val">${cert.zk_proof.protocol}</span></div>
+    <div class="cert-row"><span class="cert-key">statement</span><span class="cert-val">${escHtml(cert.zk_proof.statement)}</span></div>
+    <div class="stellar-chip">proof ${cert.zk_proof.proof_commitment}</div>
+
+    <div class="cert-section">Stellar Anchor · ERRANT → Soroban Contract</div>
+    <div class="stellar-chip">MEMO_HASH ${cert.stellar_anchor.memo_hash}</div>
+    <div class="cert-row"><span class="cert-key">tx hash</span><span class="cert-val">${cert.stellar_anchor.tx_hash?.slice(0,32)}…</span></div>
+    <div class="cert-row"><span class="cert-key">network</span><span class="cert-val">${cert.stellar_anchor.network}</span></div>
+    <div class="cert-row"><span class="cert-key">language</span><span class="cert-val">${cert.zk_proof.soroban_verifier?.source_language}</span></div>
+    <div class="cert-row"><span class="cert-key">contract</span><span class="cert-val">${cert.stellar_anchor.soroban_verifier?.contract_path}</span></div>
+
+    <div class="cert-section">Settlement Certificate</div>
+    <div class="cert-row"><span class="cert-key">cert id</span><span class="cert-val">${cert.certificate_id}</span></div>
+    <div class="cert-row"><span class="cert-key">issued</span><span class="cert-val">${cert.issued_at}</span></div>
+    <div class="seal-chip">${cert.seal}</div>
+  `;
+  certPanel.appendChild(card);
+}
+
+function renderError(msg) {
+  certPanel.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px">${escHtml(msg)}</div>`;
+}
+
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

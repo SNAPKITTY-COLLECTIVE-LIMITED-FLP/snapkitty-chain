@@ -27,6 +27,7 @@ export class SnapKittyChain {
     this.blocks = [];
     this.blockIndex = new Map();
     this.worm = [];
+    this.witnesses = new Map();
     this.state = createEmptyState();
 
     if (this.dataDir && this.load()) return;
@@ -216,6 +217,31 @@ export class SnapKittyChain {
     this.state.balances.set(address, (this.state.balances.get(address) || 0n) + amount);
   }
 
+  // ── Witness anchor — STELLA settlement ──────────────────────────────────
+  anchorWitness(witness) {
+    const wormSeal = this.seal("WITNESS", witness.snapaddr, witness);
+    const chainAnchor = {
+      chain_id:    this.chainId,
+      height:      this.height(),
+      block_hash:  this.head().hash,
+      worm_index:  this.worm.length - 1,
+      worm_seal:   wormSeal,
+      anchored_at: new Date().toISOString(),
+      seal:        wormSeal,
+    };
+    this.witnesses.set(witness.id, { witness, chainAnchor });
+    this.persist();
+    return chainAnchor;
+  }
+
+  getWitness(id) {
+    return this.witnesses.get(id) || null;
+  }
+
+  listWitnesses(limit = 25) {
+    return [...this.witnesses.values()].slice(-limit).reverse();
+  }
+
   seal(kind, subject, payload) {
     const previous = this.worm.at(-1)?.seal || "0".repeat(64);
     const entry = {
@@ -240,6 +266,7 @@ export class SnapKittyChain {
       blockReward: this.blockReward.toString(),
       blocks: this.blocks,
       worm: this.worm,
+      witnesses: Object.fromEntries(this.witnesses),
       state: serializeState(this.state)
     });
   }
@@ -252,6 +279,7 @@ export class SnapKittyChain {
       this.blockReward = BigInt(snapshot.blockReward);
       this.blocks = snapshot.blocks || [];
       this.worm = snapshot.worm || [];
+      this.witnesses = new Map(Object.entries(snapshot.witnesses || {}));
       this.state = deserializeState(snapshot.state);
       this.blockIndex = new Map(this.blocks.map((block) => [block.hash, block]));
       return this.blocks.length > 0;

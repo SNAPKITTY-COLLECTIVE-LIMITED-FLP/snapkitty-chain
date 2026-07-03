@@ -1,0 +1,71 @@
+// STELLA Sovereign Fingerprint Contract
+// Language: ERRANT
+// Target: Stellar Soroban WASM
+//
+// Purpose:
+//   Verify a Noir/UltraHonk authorship proof receipt on Stellar without
+//   revealing the private abjad key.
+//
+// Statement:
+//   prove control of a private authorship fingerprint without revealing the
+//   private abjad key.
+
+contract STELLA_FINGERPRINT_V1 {
+  type Hash32 = bytes[32];
+
+  record FingerprintReceipt {
+    public_fingerprint: Hash32,
+    proof_hash: Hash32,
+    snapaddr_hash: Hash32,
+    worm_hash: Hash32,
+    verdict_hash: Hash32,
+    action_hash: Hash32,
+  }
+
+  storage receipts: map<Hash32, FingerprintReceipt>;
+
+  // Linear capability: a proof receipt can be consumed once for storage.
+  capability VerifyReceipt consumes proof_hash: Hash32;
+
+  fn verify_fingerprint(
+    cap: VerifyReceipt,
+    public_fingerprint: Hash32,
+    proof_hash: Hash32,
+    snapaddr_hash: Hash32,
+    worm_hash: Hash32,
+    verdict_hash: Hash32,
+    action_hash: Hash32,
+    proof_words: list<Hash32>
+  ) -> bool {
+    require len(proof_words) > 0;
+    require cap.proof_hash == proof_hash;
+
+    // Adapter point:
+    //   noir_ultrahonk_verify(public_fingerprint, proof_hash, public_inputs, proof_words)
+    // lowers to the Soroban verifier call.
+    let verified = noir_ultrahonk_verify(
+      public_fingerprint,
+      proof_hash,
+      [snapaddr_hash, worm_hash, verdict_hash, action_hash],
+      proof_words
+    );
+
+    if verified {
+      receipts[proof_hash] = FingerprintReceipt {
+        public_fingerprint,
+        proof_hash,
+        snapaddr_hash,
+        worm_hash,
+        verdict_hash,
+        action_hash,
+      };
+      emit stella_verified(public_fingerprint, proof_hash);
+    }
+
+    return verified;
+  }
+
+  fn get_receipt(proof_hash: Hash32) -> option<FingerprintReceipt> {
+    return receipts.get(proof_hash);
+  }
+}

@@ -1,6 +1,14 @@
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fromHexOrDecimal, toHexQuantity, txHash } from "./crypto.mjs";
 import { CONSENSUS_AGENTS, CONSENSUS_ARCHITECTURE } from "./consensus.mjs";
+import { createWitness } from "./witness.mjs";
+import { stellarAnchor, settlementCertificate } from "./anchor.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MAGMAD_URL = process.env.MAGMAD_URL || "http://127.0.0.1:3000";
 
 export class JsonRpcServer {
   constructor({ host = "127.0.0.1", port = 8545, chain, mempool, produceBlock, peers }) {
@@ -20,8 +28,54 @@ export class JsonRpcServer {
   }
 
   async handle(req, res) {
+    // ── STELLA REST endpoints ──────────────────────────────────────────────
     if (req.method === "GET" && req.url === "/health") {
       return send(res, 200, { ok: true, height: this.chain.height(), head: this.chain.head().hash });
+    }
+
+    if (req.method === "GET" && req.url === "/stella") {
+      const html = readFileSync(join(__dirname, "../stella-ui.html"), "utf8");
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "access-control-allow-origin": "*" });
+      return res.end(html);
+    }
+
+    if (req.method === "POST" && req.url === "/stella/anchor") {
+      try {
+        const body = await readBody(req);
+        const { witness } = JSON.parse(body);
+        const chainAnchor = this.chain.anchorWitness(witness);
+        const publicAnchor = stellarAnchor(witness);
+        const cert         = settlementCertificate(witness, chainAnchor, publicAnchor);
+        return send(res, 200, cert);
+      } catch (e) {
+        return send(res, 400, { error: e.message });
+      }
+    }
+
+    if (req.method === "GET" && req.url.startsWith("/stella/witness/")) {
+      const id = req.url.slice("/stella/witness/".length);
+      const entry = this.chain.getWitness(id);
+      return entry ? send(res, 200, entry) : send(res, 404, { error: "not_found" });
+    }
+
+    if (req.method === "GET" && req.url === "/stella/witnesses") {
+      return send(res, 200, this.chain.listWitnesses());
+    }
+
+    if (req.method === "POST" && req.url === "/stella/execute") {
+      try {
+        const body    = await readBody(req);
+        const { action, session_id } = JSON.parse(body);
+        const sessionId = session_id || `stella_${Date.now()}`;
+        const stages  = await collectMagmadStages(action, sessionId);
+        const witness = createWitness(action, stages, sessionId);
+        const chainAnchor = this.chain.anchorWitness(witness);
+        const publicAnchor = stellarAnchor(witness);
+        const cert         = settlementCertificate(witness, chainAnchor, publicAnchor);
+        return send(res, 200, { witness, certificate: cert, stages });
+      } catch (e) {
+        return send(res, 500, { error: e.message });
+      }
     }
 
     if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
@@ -79,6 +133,16 @@ export class JsonRpcServer {
         const block = this.chain.exportBlock(params[0] || "latest");
         return block?.consensusProof || null;
       }
+      case "sk_anchorWitness": {
+        const witness     = params[0];
+        const chainAnchor = this.chain.anchorWitness(witness);
+        const publicAnchor = stellarAnchor(witness);
+        return settlementCertificate(witness, chainAnchor, publicAnchor);
+      }
+      case "sk_getWitness":
+        return this.chain.getWitness(params[0]);
+      case "sk_listWitnesses":
+        return this.chain.listWitnesses(Number(params[0] || 25));
       default:
         throw new Error(`unknown_method:${method}`);
     }
@@ -118,6 +182,35 @@ function decodeTx(raw) {
     ? Buffer.from(raw.slice(2), "hex").toString("utf8")
     : raw;
   return JSON.parse(text);
+}
+
+// ── STELLA: collect magmad SSE stages ──────────────────────────────────────
+
+async function collectMagmadStages(action, sessionId) {
+  const resp = await fetch(`${MAGMAD_URL}/api/v1/orchestrate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, session_id: sessionId }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  const stages = [];
+  const reader  = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try { stages.push(JSON.parse(line.slice(6))); } catch {}
+    }
+  }
+  return stages;
 }
 
 function readBody(req) {

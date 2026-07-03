@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { SnapKittyChain } from "../src/chain.mjs";
 import { createWallet, signTransaction } from "../src/crypto.mjs";
 import { Mempool } from "../src/mempool.mjs";
+import { createWitness } from "../src/witness.mjs";
+import { stellarAnchor, settlementCertificate } from "../src/anchor.mjs";
+import { createZkProofEnvelope, verifyZkProofEnvelope } from "../src/zk.mjs";
 
 test("faucet credits native FRG balance and WORM seals it", () => {
   const chain = new SnapKittyChain();
@@ -93,4 +96,44 @@ test("consensus proof tampering rejects a peer block", () => {
   const accepted = peer.acceptBlock(tampered);
   assert.equal(accepted.ok, false);
   assert.equal(accepted.reason, "bad_consensus_signature");
+});
+
+test("STELLA witness anchors to SnapKitty Chain and Stellar certificate", () => {
+  const chain = new SnapKittyChain({ difficulty: 1 });
+  const witness = createWitness("validate sovereign payment", [
+    { stage: "BOB", agent: "BOB", ok: true },
+    { stage: "TRUST-DEED-GATE", ok: true },
+    { stage: "SEAL", worm_hash: "a".repeat(64) }
+  ], "stella_test");
+
+  const chainAnchor = chain.anchorWitness(witness);
+  const publicAnchor = stellarAnchor(witness);
+  const cert = settlementCertificate(witness, chainAnchor, publicAnchor);
+
+  assert.equal(witness.verdict, "EVIDENCE");
+  assert.match(witness.snapaddr, /^snapaddr:[0-9a-f]{64}$/);
+  assert.equal(chain.worm.at(-1).kind, "WITNESS");
+  assert.equal(publicAnchor.network, "stellar-testnet");
+  assert.equal(publicAnchor.memo_hash.length, 64);
+  assert.equal(publicAnchor.zk_envelope_hash.length, 64);
+  assert.equal(cert.zk_proof.protocol, "noir-ultrahonk");
+  assert.equal(cert.zk_proof.soroban_verifier.contract_path, "stellar-zk/errant/stella-fingerprint.errant");
+  assert.equal(cert.zk_proof.soroban_verifier.source_language, "ERRANT");
+  assert.equal(verifyZkProofEnvelope(witness, cert.zk_proof).ok, true);
+  assert.equal(cert.stellar_anchor.tx_hash.length, 64);
+  assert.equal(cert.seal.length, 64);
+});
+
+test("STELLA ZK envelope rejects tampered public signals", () => {
+  const witness = createWitness("grant capability", [
+    { stage: "TRUST-DEED-GATE", ok: true },
+    { stage: "SEAL", worm_hash: "b".repeat(64) }
+  ], "stella_zk_test");
+
+  const proof = createZkProofEnvelope(witness);
+  assert.equal(verifyZkProofEnvelope(witness, proof).ok, true);
+
+  const tampered = structuredClone(proof);
+  tampered.public_signals.worm_hash = "c".repeat(64);
+  assert.equal(verifyZkProofEnvelope(witness, tampered).ok, false);
 });

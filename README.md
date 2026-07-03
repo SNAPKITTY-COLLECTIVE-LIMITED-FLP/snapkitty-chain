@@ -26,6 +26,10 @@ Those are token, ledger, and app-layer pieces. `snapkitty-chain` is the actual c
 - Ed25519 local wallet generation/signing, no external dependencies.
 - Persistent chain/state/worm files under the node data directory.
 - Self-contained Web3 console: `web3-console.html`.
+- STELLA verifier UI at `/stella` for sovereign AI witness settlement.
+- Noir zero-knowledge proof envelope for private authorship fingerprint control.
+- ERRANT sovereign contract source targeting Soroban verification and receipt storage.
+- Stellar testnet-style memo-hash anchor certificates for STELLA ZK receipts.
 
 ## Quick Start
 
@@ -126,6 +130,64 @@ C:\Users\jessi\Desktop\snapkitty-chain\web3-console.html
 ```
 
 The console talks directly to `http://127.0.0.1:8545` and shows chain height, validators, latest block, WORM seals, faucet, and manual block production.
+
+## STELLA Verifier
+
+STELLA is the hackathon demo surface:
+
+```text
+BOB / Magmad action
+  -> UnifiedWitness
+  -> snapaddr
+  -> SnapKitty Chain WORM anchor
+  -> Noir sovereign fingerprint proof
+  -> ERRANT contract verification on Soroban
+  -> Stellar testnet memo-hash anchor certificate
+  -> STELLA verification UI
+```
+
+Start the chain:
+
+```powershell
+npm run node -- --data .\.chain\stella --rpc 8545 --p2p 30333 --producer STELLA --difficulty 1
+```
+
+Open:
+
+```text
+http://127.0.0.1:8545/stella
+```
+
+API endpoints:
+
+- `GET /stella` — self-contained verifier UI.
+- `POST /stella/execute` — runs the BOB/Magmad stage collector, creates a `UnifiedWitness`, anchors it locally, and returns a settlement certificate.
+- `POST /stella/anchor` — anchors an existing witness.
+- `GET /stella/witnesses` — recent witness anchors.
+- `GET /stella/witness/:id` — one witness record.
+
+### ZK + Stellar Contract
+
+The ZK integration lives under:
+
+```text
+stellar-zk/
+  noir/stella-fingerprint/
+  errant/stella-fingerprint.errant
+  soroban/stella-fingerprint-contract/
+```
+
+The core proof statement is:
+
+> prove control of a private authorship fingerprint without revealing the private abjad key.
+
+Noir creates the off-chain proof. The ERRANT contract is the source of truth for
+verification/storage and targets Soroban WASM for Stellar. SnapKitty Chain keeps
+the full WORM witness as the private audit mirror.
+
+For the Stellar hackathon, position this as:
+
+> STELLA uses Noir plus a SnapKitty ERRANT contract targeting Soroban to verify private authorship/compliance proofs on Stellar, while SnapKitty Chain stores the full WORM witness trail.
 
 ## License
 
